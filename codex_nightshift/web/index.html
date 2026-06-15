@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Nightshift</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">CODEX NIGHTSHIFT</p>
+        <h1>任务接管中心</h1>
+        <p class="subtitle">选择哪些 Codex 任务在中断后自动继续，并为每个任务设置恢复后的第一句指令。</p>
+      </div>
+      <div class="watcher-card">
+        <div class="status-line"><span id="watcher-dot" class="dot"></span><span id="watcher-label">读取中</span></div>
+        <div class="watcher-actions">
+          <button id="start-watcher" class="button primary">启动后台守护</button>
+          <button id="stop-watcher" class="button ghost">停止</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="quota-grid">
+      <article class="quota-card">
+        <div class="quota-top"><span>5 小时窗口</span><strong id="primary-value">--</strong></div>
+        <div class="meter"><span id="primary-meter"></span></div>
+        <p id="primary-reset">正在读取限额</p>
+      </article>
+      <article class="quota-card">
+        <div class="quota-top"><span>周窗口</span><strong id="secondary-value">--</strong></div>
+        <div class="meter"><span id="secondary-meter"></span></div>
+        <p id="secondary-reset">正在读取限额</p>
+      </article>
+      <article class="quota-card summary-card">
+        <span>已选择自动执行</span>
+        <strong id="adopted-count">0</strong>
+        <p>只有开启开关的任务会被后台接管</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">RECENT TASKS</p>
+          <h2>近期 Codex 任务</h2>
+        </div>
+        <div class="filters">
+          <input id="search" type="search" placeholder="搜索任务或项目">
+          <button id="refresh" class="button ghost">刷新</button>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="legend-dot auto"></i>自动执行</span>
+        <span><i class="legend-dot off"></i>不执行</span>
+        <span>严格模式：仅明确命中额度时续跑</span>
+        <span>第一句指令留空：使用全局默认续跑指令</span>
+      </div>
+      <div id="task-list" class="task-list">
+        <div class="empty">正在读取任务...</div>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

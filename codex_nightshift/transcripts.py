@@ -223,7 +223,7 @@ def analyze_session(
 ) -> SessionStatus:
     now = now or datetime.now(timezone.utc)
     last_start: tuple[datetime, str] | None = None
-    last_terminal: tuple[datetime, str] | None = None
+    last_terminal: tuple[datetime, str, bool] | None = None
     quota: QuotaSnapshot | None = None
 
     for event in _iter_jsonl(session.transcript):
@@ -239,8 +239,11 @@ def analyze_session(
         event_type = payload.get("type")
         if event_type == "task_started":
             last_start = (timestamp, payload.get("turn_id") or timestamp.isoformat())
-        elif event_type in ("task_complete", "turn_aborted"):
-            last_terminal = (timestamp, event_type)
+        elif event_type == "task_complete":
+            has_final_answer = bool(str(payload.get("last_agent_message") or "").strip())
+            last_terminal = (timestamp, event_type, has_final_answer)
+        elif event_type == "turn_aborted":
+            last_terminal = (timestamp, event_type, False)
 
     try:
         mtime = datetime.fromtimestamp(session.transcript.stat().st_mtime, timezone.utc)
@@ -255,7 +258,20 @@ def analyze_session(
             return SessionStatus(
                 session, "stopped", "last turn was aborted", "high", "", idle_min, quota
             )
-        return SessionStatus(session, "complete", "last turn completed", "high", "", idle_min, quota)
+        if last_terminal[2]:
+            return SessionStatus(
+                session, "complete", "last turn returned a final answer", "high", "", idle_min, quota
+            )
+        fingerprint = f"{last_start[1]}@{last_start[0].timestamp():.3f}"
+        return SessionStatus(
+            session,
+            "interrupted",
+            "turn ended without a final answer",
+            "high",
+            fingerprint,
+            idle_min,
+            quota,
+        )
     fingerprint = f"{last_start[1]}@{last_start[0].timestamp():.3f}"
     if idle_min < idle_min_threshold:
         return SessionStatus(session, "active", "transcript is still changing", "high", fingerprint, idle_min, quota)

@@ -43,7 +43,12 @@ lifecycle events, and the latest 5-hour and weekly usage-window snapshots.
 Nightshift uses Codex transcript lifecycle events instead of trying to infer
 completion from the assistant's prose:
 
-- A `task_complete` event after the latest `task_started` means **completed**.
+- A `task_complete` event means the Codex turn ended, not necessarily that the
+  user's task was completed. It counts as **completed** only when it contains a
+  non-empty final agent answer.
+- A `task_complete` event with no final agent answer means **interrupted** with
+  high confidence. This is the pattern seen when Codex stops mid-work and the
+  user later has to send "continue".
 - A `turn_aborted` event after the latest `task_started` means **stopped**. It
   is not resumed automatically.
 - A recent unfinished turn is considered **active** while its transcript is

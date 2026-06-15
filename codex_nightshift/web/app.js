@@ -48,7 +48,8 @@ function render() {
 }
 
 function taskHtml(item) {
-  const statusLabel = { active: "执行中", complete: "已完成", stopped: "已停止", interrupted: "可能中断" }[item.state] || item.state;
+  const interruptedLabel = item.confidence === "high" ? "异常中断" : "可能中断";
+  const statusLabel = { active: "执行中", complete: "已完成", stopped: "已停止", interrupted: interruptedLabel }[item.state] || item.state;
   const lastResult = item.last_result ? `<span class="badge">上次续跑 ${esc(item.last_result)}</span>` : "";
   return `
     <article class="task ${item.auto ? "is-auto" : ""}" data-id="${esc(item.id)}">

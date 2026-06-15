@@ -25,6 +25,15 @@ def _event(ts: datetime, payload_type: str, **payload):
     }
 
 
+def _complete(ts: datetime, turn_id="t1", final_answer="Done."):
+    return _event(
+        ts,
+        "task_complete",
+        turn_id=turn_id,
+        last_agent_message=final_answer,
+    )
+
+
 def _token(ts: datetime, primary=20, secondary=5, p_reset=None, s_reset=None):
     return _event(
         ts,
@@ -72,10 +81,21 @@ class TranscriptTests(unittest.TestCase):
         status = self._status(
             [
                 _event(self.now - timedelta(hours=1), "task_started", turn_id="t1"),
-                _event(self.now - timedelta(minutes=50), "task_complete", turn_id="t1"),
+                _complete(self.now - timedelta(minutes=50)),
             ]
         )
         self.assertEqual(status.state, "complete")
+
+    def test_turn_ending_without_final_answer_is_interrupted(self):
+        status = self._status(
+            [
+                _event(self.now - timedelta(hours=1), "task_started", turn_id="t1"),
+                _complete(self.now - timedelta(minutes=50), final_answer=""),
+            ]
+        )
+        self.assertTrue(status.resumable)
+        self.assertEqual(status.reason, "turn ended without a final answer")
+        self.assertEqual(status.confidence, "high")
 
     def test_aborted_turn_is_stopped_and_not_resumable(self):
         status = self._status(
@@ -144,8 +164,8 @@ class TranscriptTests(unittest.TestCase):
 
     def test_resolve_unique_prefix_and_last(self):
         index = self.root / "index.jsonl"
-        first = _write(self.root, "abc-111", [_event(self.now, "task_complete")], age_min=20)
-        second = _write(self.root, "def-222", [_event(self.now, "task_complete")], age_min=10)
+        first = _write(self.root, "abc-111", [_complete(self.now)], age_min=20)
+        second = _write(self.root, "def-222", [_complete(self.now)], age_min=10)
         index.write_text("")
         self.assertEqual(resolve_session("abc", root=self.root, index_path=index).transcript, first)
         self.assertEqual(resolve_session("last", root=self.root, index_path=index).transcript, second)

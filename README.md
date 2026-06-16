@@ -150,6 +150,8 @@ you explicitly adopted. Stop or remove it with:
 
 The scheduled task points at the current source directory. If you move the
 directory later, run `background install` again from the new location.
+After upgrading this source tree, run `background install --start-now` or use
+the GUI's background button once so the watcher process reloads the new code.
 
 When an adopted session ends with an unfinished turn, Nightshift waits until
 any exhausted usage window resets, then invokes:

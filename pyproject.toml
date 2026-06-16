@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-nightshift"
-version = "0.4.1"
+version = "0.4.2"
 description = "Explicitly adopt ordinary Codex sessions and resume them after interruptions."
 readme = "README.md"
 requires-python = ">=3.10"

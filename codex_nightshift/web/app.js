@@ -62,13 +62,27 @@ function scheduleDraftFromTask(task) {
   };
 }
 
-function render() {
+function isTaskFormActive() {
+  const active = document.activeElement;
+  return Boolean(
+    active
+    && active.closest
+    && active.closest(".task")
+    && active.matches("input, textarea, select")
+  );
+}
+
+function render(options = {}) {
   quotaCard("primary", state.quota?.primary);
   quotaCard("secondary", state.quota?.secondary);
   $("adopted-count").textContent = state.adopted_count ?? 0;
   $("watcher-dot").classList.toggle("on", Boolean(state.watcher_running));
   $("watcher-label").textContent = state.watcher_running ? "后台守护正在运行" : "后台守护未运行";
   $("start-watcher").textContent = state.watcher_running ? "重新安装后台守护" : "启动后台守护";
+
+  if (options.preserveTaskList && (isTaskFormActive() || drafts.size > 0)) {
+    return;
+  }
 
   const sessions = state.sessions.filter((item) => {
     const haystack = `${item.title} ${item.project} ${item.cwd} ${item.id}`.toLowerCase();
@@ -232,10 +246,10 @@ function bindTasks() {
   });
 }
 
-async function refresh() {
+async function refresh(options = {}) {
   try {
     state = await api("/api/state");
-    render();
+    render(options);
   } catch (error) {
     toast(error.message, true);
   }
@@ -259,4 +273,4 @@ $("refresh").addEventListener("click", refresh);
 $("start-watcher").addEventListener("click", () => background("install_start"));
 $("stop-watcher").addEventListener("click", () => background("stop"));
 refresh();
-setInterval(refresh, 10000);
+setInterval(() => refresh({ preserveTaskList: true }), 10000);

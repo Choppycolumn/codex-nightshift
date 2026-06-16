@@ -33,12 +33,22 @@ def _run_ps(command: str) -> subprocess.CompletedProcess[str]:
 def install(start_now: bool = False) -> tuple[bool, str]:
     if os.name != "nt":
         return False, "background task installation is currently Windows-only"
+    if start_now:
+        from .runner import stop_lock_owner
+
+        stop_lock_owner()
+        _cleanup_stale_watch_lock()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     task = _quote_ps(TASK_NAME)
     python = _quote_ps(sys.executable)
     root = _quote_ps(_repo_root())
-    start = f"Start-ScheduledTask -TaskName '{task}';" if start_now else ""
+    start = (
+        f"Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue;"
+        f"Start-ScheduledTask -TaskName '{task}';"
+        if start_now
+        else ""
+    )
     command = (
         f"$action = New-ScheduledTaskAction -Execute '{python}' "
         f"-Argument '-m codex_nightshift watch' -WorkingDirectory '{root}';"

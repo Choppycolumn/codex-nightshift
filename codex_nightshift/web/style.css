@@ -113,7 +113,7 @@ h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
   background: #0b1019;
 }
 .mode select:disabled { opacity: .38; }
-.prompt-row {
+.prompt-row, .schedule-row {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -121,11 +121,10 @@ h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
   gap: 10px;
   padding-top: 3px;
 }
-.prompt-row label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
-.prompt-row textarea {
+.prompt-row label, .schedule-row label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
+.prompt-row textarea, .schedule-row textarea, .schedule-row input, .schedule-row select {
   width: 100%;
   min-height: 58px;
-  resize: vertical;
   border: 1px solid var(--line);
   border-radius: 9px;
   outline: none;
@@ -134,8 +133,16 @@ h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
   background: #0b1019;
   line-height: 1.45;
 }
-.prompt-row textarea:focus { border-color: var(--accent-2); }
-.prompt-row textarea:disabled, .prompt-row button:disabled { opacity: .38; cursor: not-allowed; }
+.prompt-row textarea, .schedule-row textarea { resize: vertical; }
+.schedule-row {
+  grid-template-columns: 130px 190px 120px minmax(0, 1fr) auto;
+  align-items: end;
+  padding-top: 0;
+}
+.schedule-row input, .schedule-row select { min-height: 40px; }
+.schedule-enabled-label input { width: 18px; min-height: 18px; accent-color: var(--accent); }
+.prompt-row textarea:focus, .schedule-row textarea:focus, .schedule-row input:focus, .schedule-row select:focus { border-color: var(--accent-2); }
+.prompt-row textarea:disabled, .prompt-row button:disabled, .schedule-row textarea:disabled, .schedule-row input:disabled, .schedule-row select:disabled, .schedule-row button:disabled { opacity: .38; cursor: not-allowed; }
 .switch { position: relative; width: 50px; height: 28px; flex: 0 0 auto; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
 .slider { position: absolute; inset: 0; border-radius: 99px; cursor: pointer; background: #313d50; transition: .2s ease; }
@@ -155,7 +162,7 @@ h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
   .filters input { width: 100%; }
   .task { grid-template-columns: 1fr; gap: 14px; }
   .controls { justify-content: space-between; }
-  .prompt-row { grid-template-columns: 1fr; }
+  .prompt-row, .schedule-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .shell { width: min(100% - 20px, 1180px); padding-top: 28px; }

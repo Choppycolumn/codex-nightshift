@@ -5,7 +5,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,60 @@ def _session_from_entry(entry: dict[str, Any]) -> SessionInfo:
     )
 
 
+def _parse_run_at(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _schedule_timestamp(schedule: dict[str, Any]) -> float | None:
+    run_at = _parse_run_at(str(schedule.get("run_at", "")))
+    if run_at is None:
+        return None
+    return run_at.timestamp()
+
+
+def _schedule_due(schedule: dict[str, Any], now: float | None = None) -> bool:
+    if not schedule.get("enabled"):
+        return False
+    if not str(schedule.get("prompt", "")).strip():
+        return False
+    due_at = _schedule_timestamp(schedule)
+    return due_at is not None and due_at <= (now or time.time())
+
+
+def _advance_scheduled_command(
+    schedule: dict[str, Any], result: RunResult, attempted_at: float
+) -> dict[str, Any]:
+    updated = dict(schedule)
+    updated["last_attempt_at"] = attempted_at
+    updated["last_result"] = (
+        "success" if result.success else "limit" if result.hit_limit else "failed"
+    )
+    if result.hit_limit:
+        return updated
+
+    repeat = str(updated.get("repeat", "once"))
+    if repeat == "once":
+        updated["enabled"] = False
+        updated["last_run_at"] = attempted_at
+        return updated
+
+    step = {"hourly": timedelta(hours=1), "daily": timedelta(days=1)}.get(repeat)
+    current = _parse_run_at(str(updated.get("run_at", "")))
+    if step is None or current is None:
+        updated["enabled"] = False
+        updated["last_run_at"] = attempted_at
+        return updated
+
+    while current.timestamp() <= attempted_at:
+        current += step
+    updated["run_at"] = current.isoformat(timespec="minutes")
+    updated["last_run_at"] = attempted_at
+    return updated
+
+
 def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
     config = load_config()
     registry = load_registry()
@@ -131,7 +185,50 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
             _log(f"skipping {session_id[:8]}: transcript is missing")
             continue
 
-        status = analyze_session(_session_from_entry(entry), float(watch["idle_min"]))
+        session = _session_from_entry(entry)
+        scheduled = entry.get("scheduled_command") or {}
+        if isinstance(scheduled, dict) and _schedule_due(scheduled):
+            quota = global_quota
+            wait_until = quota.blocked_until() if quota else None
+            if wait_until:
+                blocked_until = max(blocked_until or 0, wait_until)
+                continue
+            last_attempt = float(scheduled.get("last_attempt_at", 0))
+            if time.time() - last_attempt < float(watch["retry_backoff_sec"]):
+                continue
+
+            attempted_at = time.time()
+            result = resume_session(
+                session,
+                config=config,
+                dry_run=dry_run,
+                prompt=str(scheduled.get("prompt", "")),
+            )
+            resumed += 1
+            if dry_run:
+                _log("scheduled command: " + subprocess.list2cmdline(result.command))
+            else:
+                update_thread(
+                    session_id,
+                    scheduled_command=_advance_scheduled_command(
+                        scheduled, result, attempted_at
+                    ),
+                    last_result=(
+                        "scheduled-success"
+                        if result.success
+                        else "scheduled-limit"
+                        if result.hit_limit
+                        else "scheduled-failed"
+                    ),
+                    last_log=str(result.log_path),
+                )
+            _log(
+                f"{'would send scheduled command to' if dry_run else 'scheduled command finished for'} "
+                f"{session_id[:8]}: result={'dry-run' if dry_run else result.returncode}"
+            )
+            continue
+
+        status = analyze_session(session, float(watch["idle_min"]))
         if not status.resumable:
             continue
         if entry.get("strict") and status.confidence != "high":

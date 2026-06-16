@@ -90,3 +90,14 @@ def set_thread_prompt(session_id: str, prompt: str) -> bool:
     registry["threads"][session_id] = entry
     save_registry(registry)
     return True
+
+
+def set_thread_schedule(session_id: str, schedule: dict[str, Any]) -> bool:
+    registry = load_registry()
+    entry = registry["threads"].get(session_id)
+    if entry is None:
+        return False
+    entry["scheduled_command"] = schedule
+    registry["threads"][session_id] = entry
+    save_registry(registry)
+    return True

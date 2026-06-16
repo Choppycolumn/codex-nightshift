@@ -43,6 +43,12 @@ class WebUiTests(unittest.TestCase):
                 "session-1": {
                     "strict": True,
                     "resume_prompt": "Run the tests first.",
+                    "scheduled_command": {
+                        "enabled": True,
+                        "run_at": "2026-06-16T23:00",
+                        "repeat": "daily",
+                        "prompt": "Send a nightly report.",
+                    },
                     "last_result": "success",
                 }
             }
@@ -59,6 +65,10 @@ class WebUiTests(unittest.TestCase):
         self.assertTrue(state["sessions"][0]["auto"])
         self.assertTrue(state["sessions"][0]["strict"])
         self.assertEqual(state["sessions"][0]["resume_prompt"], "Run the tests first.")
+        self.assertEqual(
+            state["sessions"][0]["scheduled_command"]["prompt"],
+            "Send a nightly report.",
+        )
         self.assertEqual(state["quota"]["primary"]["used"], 75)
 
     def test_auto_toggle_adopts_or_removes(self):
@@ -107,6 +117,39 @@ class WebUiTests(unittest.TestCase):
         self.assertFalse(missing["ok"])
         self.assertFalse(too_long["ok"])
         self.assertEqual(calls[:2], [("session-1", "Run tests."), ("session-1", "")])
+
+    def test_schedule_update_requires_adopted_session(self):
+        original = webui.set_thread_schedule
+        calls = []
+        webui.set_thread_schedule = lambda session_id, schedule: calls.append(
+            (session_id, schedule)
+        ) or session_id == "session-1"
+        try:
+            saved = webui.set_session_schedule(
+                "session-1",
+                True,
+                "2026-06-16T23:30",
+                "daily",
+                "  Summarize progress.  ",
+            )
+            disabled = webui.set_session_schedule(
+                "session-1", False, "", "once", ""
+            )
+            missing = webui.set_session_schedule(
+                "missing", True, "2026-06-16T23:30", "once", "Run"
+            )
+            invalid = webui.set_session_schedule(
+                "session-1", True, "bad-time", "once", "Run"
+            )
+        finally:
+            webui.set_thread_schedule = original
+        self.assertTrue(saved["ok"])
+        self.assertEqual(saved["scheduled_command"]["prompt"], "Summarize progress.")
+        self.assertEqual(saved["scheduled_command"]["repeat"], "daily")
+        self.assertFalse(disabled["scheduled_command"]["enabled"])
+        self.assertFalse(missing["ok"])
+        self.assertFalse(invalid["ok"])
+        self.assertEqual(calls[0][0], "session-1")
 
     def test_static_assets_exist(self):
         for name in ("index.html", "style.css", "app.js"):

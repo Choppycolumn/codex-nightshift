@@ -18,6 +18,7 @@ from .state import (
     load_registry,
     remove_thread,
     set_thread_prompt,
+    set_thread_schedule,
     set_thread_strict,
 )
 from .transcripts import analyze_session, latest_quota, list_recent_sessions, resolve_session
@@ -58,6 +59,7 @@ def build_state() -> dict[str, Any]:
                 "auto": adopted is not None,
                 "strict": bool(adopted and adopted.get("strict")),
                 "resume_prompt": (adopted or {}).get("resume_prompt", ""),
+                "scheduled_command": (adopted or {}).get("scheduled_command", {}),
                 "last_result": (adopted or {}).get("last_result", ""),
             }
         )
@@ -109,6 +111,37 @@ def set_session_prompt(session_id: str, prompt: str) -> dict[str, Any]:
         return {"ok": False, "message": "请先开启自动续跑"}
     message = "已保存恢复后的第一句指令" if prompt else "已恢复使用默认续跑指令"
     return {"ok": True, "message": message, "resume_prompt": prompt}
+
+
+def set_session_schedule(
+    session_id: str, enabled: bool, run_at: str, repeat: str, prompt: str
+) -> dict[str, Any]:
+    run_at = run_at.strip()
+    repeat = repeat.strip() or "once"
+    prompt = prompt.strip()
+    if repeat not in {"once", "hourly", "daily"}:
+        return {"ok": False, "message": "未知重复模式"}
+    if len(prompt) > 4000:
+        return {"ok": False, "message": "计划命令不能超过 4000 个字符"}
+    if enabled:
+        if not run_at:
+            return {"ok": False, "message": "请设置下达时间"}
+        if not prompt:
+            return {"ok": False, "message": "请填写要下达的命令"}
+        try:
+            datetime.fromisoformat(run_at)
+        except ValueError:
+            return {"ok": False, "message": "时间格式无效"}
+    schedule = {
+        "enabled": enabled,
+        "run_at": run_at,
+        "repeat": repeat,
+        "prompt": prompt,
+    }
+    if not set_thread_schedule(session_id, schedule):
+        return {"ok": False, "message": "请先开启自动续跑"}
+    message = "计划命令已保存" if enabled else "计划命令已关闭"
+    return {"ok": True, "message": message, "scheduled_command": schedule}
 
 
 def background_action(action: str) -> dict[str, Any]:
@@ -200,6 +233,14 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/session/prompt":
                 result = set_session_prompt(
                     str(data.get("session_id", "")), str(data.get("prompt", ""))
+                )
+            elif path == "/api/session/schedule":
+                result = set_session_schedule(
+                    str(data.get("session_id", "")),
+                    bool(data.get("enabled")),
+                    str(data.get("run_at", "")),
+                    str(data.get("repeat", "once")),
+                    str(data.get("prompt", "")),
                 )
             elif path == "/api/background":
                 result = background_action(str(data.get("action", "")))

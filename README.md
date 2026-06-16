@@ -22,9 +22,23 @@ The local dashboard shows recent Codex tasks and lets you choose, per task:
 - **Quota exhausted only:** strict mode; ignore ordinary idle unfinished turns.
 - **First instruction after resume:** set a task-specific continuation prompt. Leave
   it blank to use the global `resume.prompt` default.
+- **Scheduled command:** send a command to a specific conversation at a chosen
+  local time, either once, hourly, or daily.
 
 The GUI only listens on `127.0.0.1`. It also provides controls for installing,
 starting, and stopping the Windows background watcher.
+
+Scheduled commands are handled by the same background watcher. At the selected
+time, Nightshift runs:
+
+```text
+codex exec --json --sandbox workspace-write --skip-git-repo-check resume <SESSION_ID> <SCHEDULED_COMMAND>
+```
+
+This is separate from interruption recovery. It can run even if the conversation
+is currently complete, because the point is to intentionally give that
+conversation a new instruction at a specific time. If a usage window is
+exhausted, the command waits for the reset instead of burning retries.
 
 It is intentionally conservative:
 

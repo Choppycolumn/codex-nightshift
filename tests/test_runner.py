@@ -198,6 +198,67 @@ class RunnerTests(unittest.TestCase):
             transcript.unlink(missing_ok=True)
         self.assertEqual(resumed, 0)
 
+    def test_due_scheduled_command_runs_even_when_session_is_complete(self):
+        descriptor, name = tempfile.mkstemp(prefix="cn_transcript_", suffix=".jsonl")
+        os.close(descriptor)
+        transcript = Path(name)
+        config = {
+            "watch": {
+                "max_resumes_per_cycle": 1,
+                "idle_min": 5,
+                "retry_backoff_sec": 0,
+            },
+            "resume": {"resume_incomplete": True},
+        }
+        registry = {
+            "threads": {
+                "session-1": {
+                    "session_id": "session-1",
+                    "transcript": str(transcript),
+                    "cwd": str(transcript.parent),
+                    "title": "test",
+                    "enabled": True,
+                    "scheduled_command": {
+                        "enabled": True,
+                        "run_at": "2000-01-01T00:00",
+                        "repeat": "once",
+                        "prompt": "Check CI and report back.",
+                    },
+                }
+            }
+        }
+        updates = {}
+        prompts = []
+        originals = {
+            "load_config": runner.load_config,
+            "load_registry": runner.load_registry,
+            "latest_quota": runner.latest_quota,
+            "analyze_session": runner.analyze_session,
+            "resume_session": runner.resume_session,
+            "update_thread": runner.update_thread,
+        }
+        runner.load_config = lambda: config
+        runner.load_registry = lambda: registry
+        runner.latest_quota = lambda: None
+        runner.analyze_session = lambda *args, **kwargs: self.fail("schedule waited for interruption")
+        runner.resume_session = lambda *args, **kwargs: (
+            prompts.append(kwargs.get("prompt"))
+            or runner.RunResult(
+                True, False, 0, transcript.with_suffix(".log"), ["codex", "resume"]
+            )
+        )
+        runner.update_thread = lambda session_id, **kwargs: updates.update(kwargs)
+        try:
+            resumed, _ = runner.run_cycle()
+        finally:
+            for attr, value in originals.items():
+                setattr(runner, attr, value)
+            transcript.unlink(missing_ok=True)
+        self.assertEqual(resumed, 1)
+        self.assertEqual(prompts, ["Check CI and report back."])
+        self.assertFalse(updates["scheduled_command"]["enabled"])
+        self.assertEqual(updates["last_result"], "scheduled-success")
+
 
 if __name__ == "__main__":
     unittest.main()

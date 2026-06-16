@@ -48,9 +48,11 @@ function render() {
 }
 
 function taskHtml(item) {
+  const schedule = item.scheduled_command || {};
   const interruptedLabel = item.confidence === "high" ? "异常中断" : "可能中断";
   const statusLabel = { active: "执行中", complete: "已完成", stopped: "已停止", interrupted: interruptedLabel }[item.state] || item.state;
   const lastResult = item.last_result ? `<span class="badge">上次续跑 ${esc(item.last_result)}</span>` : "";
+  const scheduleBadge = schedule.enabled ? `<span class="badge">计划 ${esc(schedule.run_at)}</span>` : "";
   return `
     <article class="task ${item.auto ? "is-auto" : ""}" data-id="${esc(item.id)}">
       <div>
@@ -61,6 +63,7 @@ function taskHtml(item) {
           <span>${esc(item.last_active)}</span>
           <span>${esc(item.short_id)}</span>
           ${lastResult}
+          ${scheduleBadge}
         </div>
       </div>
       <div class="controls">
@@ -82,6 +85,29 @@ function taskHtml(item) {
           <textarea class="resume-prompt" maxlength="4000" rows="2" placeholder="留空则使用默认续跑指令" ${item.auto ? "" : "disabled"}>${esc(item.resume_prompt)}</textarea>
         </label>
         <button class="button save-prompt" ${item.auto ? "" : "disabled"}>保存指令</button>
+      </div>
+      <div class="schedule-row">
+        <label class="schedule-enabled-label">
+          <span>定时命令</span>
+          <input class="schedule-enabled" type="checkbox" ${schedule.enabled ? "checked" : ""} ${item.auto ? "" : "disabled"}>
+        </label>
+        <label>
+          <span>下达时间</span>
+          <input class="schedule-run-at" type="datetime-local" value="${esc(schedule.run_at || "")}" ${item.auto ? "" : "disabled"}>
+        </label>
+        <label>
+          <span>重复</span>
+          <select class="schedule-repeat" ${item.auto ? "" : "disabled"}>
+            <option value="once" ${(schedule.repeat || "once") === "once" ? "selected" : ""}>一次</option>
+            <option value="hourly" ${schedule.repeat === "hourly" ? "selected" : ""}>每小时</option>
+            <option value="daily" ${schedule.repeat === "daily" ? "selected" : ""}>每天</option>
+          </select>
+        </label>
+        <label class="schedule-command-label">
+          <span>到点下达的命令</span>
+          <textarea class="schedule-prompt" maxlength="4000" rows="2" placeholder="例如：检查 CI 状态并继续修复失败项" ${item.auto ? "" : "disabled"}>${esc(schedule.prompt || "")}</textarea>
+        </label>
+        <button class="button save-schedule" ${item.auto ? "" : "disabled"}>保存计划</button>
       </div>
     </article>`;
 }
@@ -127,6 +153,27 @@ function bindTasks() {
         const result = await api("/api/session/prompt", {
           method: "POST",
           body: JSON.stringify({ session_id: sessionId, prompt }),
+        });
+        toast(result.message);
+        await refresh();
+      } catch (error) {
+        toast(error.message, true);
+      } finally {
+        event.target.disabled = false;
+      }
+    });
+    task.querySelector(".save-schedule").addEventListener("click", async (event) => {
+      event.target.disabled = true;
+      try {
+        const result = await api("/api/session/schedule", {
+          method: "POST",
+          body: JSON.stringify({
+            session_id: sessionId,
+            enabled: task.querySelector(".schedule-enabled").checked,
+            run_at: task.querySelector(".schedule-run-at").value,
+            repeat: task.querySelector(".schedule-repeat").value,
+            prompt: task.querySelector(".schedule-prompt").value,
+          }),
         });
         toast(result.message);
         await refresh();

@@ -27,6 +27,9 @@ The local dashboard shows recent Codex tasks and lets you choose, per task:
 
 The GUI only listens on `127.0.0.1`. It also provides controls for installing,
 starting, and stopping the Windows background watcher.
+The dashboard refreshes state automatically, but unsaved text in prompt and
+scheduled-command fields is kept as a local draft until you save or disable the
+task.
 
 Scheduled commands are handled by the same background watcher. At the selected
 time, Nightshift runs:

@@ -31,6 +31,10 @@ The dashboard refreshes state automatically, but unsaved text in prompt and
 scheduled-command fields is kept as a local draft until you save or disable the
 task.
 
+Prompt text is sent to Codex through standard input rather than the Windows
+command line, so the GUI does not impose a character limit. Background child
+processes are launched without console windows.
+
 Scheduled commands are handled by the same background watcher. At the selected
 time, Nightshift runs:
 
@@ -42,6 +46,10 @@ This is separate from interruption recovery. It can run even if the conversation
 is currently complete, because the point is to intentionally give that
 conversation a new instruction at a specific time. If a usage window is
 exhausted, the command waits for the reset instead of burning retries.
+
+When Codex returns an explicit usage-limit error, Nightshift parses the reported
+"try again" time and waits until then. Other resume failures pause that task
+after the first failed attempt; toggle automatic execution back on to retry.
 
 It is intentionally conservative:
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -39,13 +40,39 @@ class RunResult:
     returncode: int
     log_path: Path
     command: list[str]
+    retry_at: float | None = None
+
+
+def _creation_flags() -> int:
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def _effective_prompt(config: dict[str, Any], prompt: str = "") -> str:
+    return prompt.strip() or str(config["resume"]["prompt"])
+
+
+def _retry_at_from_output(output: str, now: float | None = None) -> float | None:
+    match = re.search(
+        r"try again at\s+(\d{1,2}):(\d{2})\s*([ap]m)", output, re.IGNORECASE
+    )
+    if match is None:
+        return None
+    current = datetime.fromtimestamp(now or time.time()).astimezone()
+    hour = int(match.group(1)) % 12
+    if match.group(3).lower() == "pm":
+        hour += 12
+    candidate = current.replace(
+        hour=hour, minute=int(match.group(2)), second=0, microsecond=0
+    )
+    if candidate.timestamp() <= current.timestamp() + 60:
+        candidate += timedelta(days=1)
+    return candidate.timestamp()
 
 
 def build_resume_command(
     session_id: str, config: dict[str, Any], prompt: str = ""
 ) -> list[str]:
     resume = config["resume"]
-    effective_prompt = prompt.strip() or resume["prompt"]
     command = [
         find_codex_cmd(config),
         "exec",
@@ -55,7 +82,7 @@ def build_resume_command(
         "--skip-git-repo-check",
     ]
     command.extend(str(arg) for arg in resume.get("extra_args", []))
-    command.extend(["resume", session_id, effective_prompt])
+    command.extend(["resume", session_id, "-"])
     return command
 
 
@@ -67,6 +94,7 @@ def resume_session(
 ) -> RunResult:
     config = config or load_config()
     command = build_resume_command(session.session_id, config, prompt)
+    effective_prompt = _effective_prompt(config, prompt)
     log_path = LOG_DIR / f"resume-{session.session_id[:8]}-{int(time.time())}.log"
     if dry_run:
         return RunResult(True, False, 0, log_path, command)
@@ -77,22 +105,33 @@ def resume_session(
     try:
         result = subprocess.run(
             command,
+            input=effective_prompt,
             cwd=cwd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            creationflags=_creation_flags(),
         )
         output = (
             f"command: {json.dumps(command)}\n"
+            f"stdin_chars: {len(effective_prompt)}\n"
             f"exit: {result.returncode}\n"
             f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
         log_path.write_text(output, encoding="utf-8")
         blob = (result.stdout + result.stderr).lower()
         hit_limit = any(marker in blob for marker in LIMIT_MARKERS)
-        return RunResult(result.returncode == 0 and not hit_limit, hit_limit, result.returncode, log_path, command)
+        retry_at = _retry_at_from_output(blob) if hit_limit else None
+        return RunResult(
+            result.returncode == 0 and not hit_limit,
+            hit_limit,
+            result.returncode,
+            log_path,
+            command,
+            retry_at,
+        )
     except subprocess.TimeoutExpired as exc:
         log_path.write_text(f"timeout after {timeout}s\n{exc}", encoding="utf-8")
         return RunResult(False, False, 124, log_path, command)
@@ -128,12 +167,15 @@ def _schedule_timestamp(schedule: dict[str, Any]) -> float | None:
 
 
 def _schedule_due(schedule: dict[str, Any], now: float | None = None) -> bool:
+    current = now or time.time()
     if not schedule.get("enabled"):
         return False
     if not str(schedule.get("prompt", "")).strip():
         return False
+    if float(schedule.get("retry_after", 0)) > current:
+        return False
     due_at = _schedule_timestamp(schedule)
-    return due_at is not None and due_at <= (now or time.time())
+    return due_at is not None and due_at <= current
 
 
 def _advance_scheduled_command(
@@ -145,7 +187,10 @@ def _advance_scheduled_command(
         "success" if result.success else "limit" if result.hit_limit else "failed"
     )
     if result.hit_limit:
+        updated["retry_after"] = result.retry_at or attempted_at + 3600
         return updated
+
+    updated.pop("retry_after", None)
 
     repeat = str(updated.get("repeat", "once"))
     if repeat == "once":
@@ -178,7 +223,23 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
     for session_id, entry in registry["threads"].items():
         if resumed >= int(watch["max_resumes_per_cycle"]):
             break
+        if (
+            entry.get("enabled", True)
+            and entry.get("last_result") == "failed"
+            and entry.get("last_fingerprint")
+        ):
+            if not dry_run:
+                update_thread(
+                    session_id,
+                    enabled=False,
+                    pause_reason="previous automatic resume failed; re-enable to retry",
+                )
+            continue
         if not entry.get("enabled", True):
+            continue
+        entry_retry_after = float(entry.get("retry_after", 0))
+        if entry.get("last_result") == "limit" and entry_retry_after > time.time():
+            blocked_until = max(blocked_until or 0, entry_retry_after)
             continue
         path = Path(entry.get("transcript", ""))
         if not path.exists():
@@ -187,6 +248,11 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
 
         session = _session_from_entry(entry)
         scheduled = entry.get("scheduled_command") or {}
+        if isinstance(scheduled, dict):
+            schedule_retry_after = float(scheduled.get("retry_after", 0))
+            if scheduled.get("enabled") and schedule_retry_after > time.time():
+                blocked_until = max(blocked_until or 0, schedule_retry_after)
+                continue
         if isinstance(scheduled, dict) and _schedule_due(scheduled):
             quota = global_quota
             wait_until = quota.blocked_until() if quota else None
@@ -237,7 +303,7 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
             continue
         if (
             entry.get("last_fingerprint") == status.fingerprint
-            and entry.get("last_result") == "success"
+            and entry.get("last_result") != "limit"
         ):
             continue
 
@@ -251,6 +317,7 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
         if time.time() - last_attempt < float(watch["retry_backoff_sec"]):
             continue
 
+        attempted_at = time.time()
         result = resume_session(
             status.session,
             config=config,
@@ -261,12 +328,24 @@ def run_cycle(dry_run: bool = False) -> tuple[int, int | None]:
         if dry_run:
             _log("command: " + subprocess.list2cmdline(result.command))
         else:
+            updates: dict[str, Any] = {
+                "last_attempt_at": attempted_at,
+                "last_fingerprint": status.fingerprint,
+                "last_result": "success" if result.success else "limit" if result.hit_limit else "failed",
+                "last_log": str(result.log_path),
+            }
+            if result.hit_limit:
+                updates["retry_after"] = result.retry_at or attempted_at + 3600
+            else:
+                updates["retry_after"] = 0
+            if not result.success and not result.hit_limit:
+                updates["enabled"] = False
+                updates["pause_reason"] = (
+                    f"automatic resume failed with exit code {result.returncode}"
+                )
             update_thread(
                 session_id,
-                last_attempt_at=time.time(),
-                last_fingerprint=status.fingerprint,
-                last_result="success" if result.success else "limit" if result.hit_limit else "failed",
-                last_log=str(result.log_path),
+                **updates,
             )
         _log(
             f"{'would resume' if dry_run else 'resume finished'} {session_id[:8]}: "
@@ -367,6 +446,7 @@ def stop_lock_owner() -> bool:
             ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
             capture_output=True,
             timeout=15,
+            creationflags=_creation_flags(),
         )
     else:
         os.kill(pid, 15)

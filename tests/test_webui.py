@@ -108,14 +108,14 @@ class WebUiTests(unittest.TestCase):
             saved = webui.set_session_prompt("session-1", "  Run tests.  ")
             cleared = webui.set_session_prompt("session-1", " ")
             missing = webui.set_session_prompt("missing", "Continue")
-            too_long = webui.set_session_prompt("session-1", "x" * 4001)
+            long_prompt = webui.set_session_prompt("session-1", "x" * 100_000)
         finally:
             webui.set_thread_prompt = original
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["resume_prompt"], "Run tests.")
         self.assertEqual(cleared["resume_prompt"], "")
         self.assertFalse(missing["ok"])
-        self.assertFalse(too_long["ok"])
+        self.assertTrue(long_prompt["ok"])
         self.assertEqual(calls[:2], [("session-1", "Run tests."), ("session-1", "")])
 
     def test_schedule_update_requires_adopted_session(self):
@@ -141,6 +141,13 @@ class WebUiTests(unittest.TestCase):
             invalid = webui.set_session_schedule(
                 "session-1", True, "bad-time", "once", "Run"
             )
+            long_schedule = webui.set_session_schedule(
+                "session-1",
+                True,
+                "2026-06-16T23:30",
+                "once",
+                "x" * 100_000,
+            )
         finally:
             webui.set_thread_schedule = original
         self.assertTrue(saved["ok"])
@@ -149,6 +156,7 @@ class WebUiTests(unittest.TestCase):
         self.assertFalse(disabled["scheduled_command"]["enabled"])
         self.assertFalse(missing["ok"])
         self.assertFalse(invalid["ok"])
+        self.assertTrue(long_schedule["ok"])
         self.assertEqual(calls[0][0], "session-1")
 
     def test_static_assets_exist(self):

@@ -33,6 +33,8 @@ class ScheduleWindowsTests(unittest.TestCase):
         self.assertIn("Start-ScheduledTask", captured["command"])
         self.assertIn("-m codex_nightshift watch", captured["command"])
         self.assertIn("-WorkingDirectory", captured["command"])
+        if original_name == "nt":
+            self.assertIn("pythonw.exe", captured["command"].lower())
 
     def test_cleanup_removes_dead_process_lock(self):
         original_lock = runner.WATCH_LOCK

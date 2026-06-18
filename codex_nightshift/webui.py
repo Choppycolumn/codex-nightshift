@@ -25,6 +25,7 @@ from .transcripts import analyze_session, latest_quota, list_recent_sessions, re
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
 
 
 def _reset_text(timestamp: int | None) -> str:
@@ -56,7 +57,9 @@ def build_state() -> dict[str, Any]:
                 "state": status.state,
                 "reason": status.reason,
                 "confidence": status.confidence,
-                "auto": adopted is not None,
+                "auto": bool(adopted and adopted.get("enabled", True)),
+                "paused": bool(adopted and not adopted.get("enabled", True)),
+                "pause_reason": (adopted or {}).get("pause_reason", ""),
                 "strict": bool(adopted and adopted.get("strict")),
                 "resume_prompt": (adopted or {}).get("resume_prompt", ""),
                 "scheduled_command": (adopted or {}).get("scheduled_command", {}),
@@ -80,7 +83,9 @@ def build_state() -> dict[str, Any]:
     return {
         "quota": quota_data,
         "sessions": sessions,
-        "adopted_count": len(registry),
+        "adopted_count": sum(
+            1 for entry in registry.values() if entry.get("enabled", True)
+        ),
         "watcher_running": _lock_owner_alive(),
         "data_dir": str(Path.home() / ".codex-nightshift"),
     }
@@ -105,8 +110,6 @@ def set_session_mode(session_id: str, strict: bool) -> dict[str, Any]:
 
 def set_session_prompt(session_id: str, prompt: str) -> dict[str, Any]:
     prompt = prompt.strip()
-    if len(prompt) > 4000:
-        return {"ok": False, "message": "第一句指令不能超过 4000 个字符"}
     if not set_thread_prompt(session_id, prompt):
         return {"ok": False, "message": "请先开启自动续跑"}
     message = "已保存恢复后的第一句指令" if prompt else "已恢复使用默认续跑指令"
@@ -121,8 +124,6 @@ def set_session_schedule(
     prompt = prompt.strip()
     if repeat not in {"once", "hourly", "daily"}:
         return {"ok": False, "message": "未知重复模式"}
-    if len(prompt) > 4000:
-        return {"ok": False, "message": "计划命令不能超过 4000 个字符"}
     if enabled:
         if not run_at:
             return {"ok": False, "message": "请设置下达时间"}
@@ -189,9 +190,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _read_json(self) -> dict[str, Any]:
-        length = min(int(self.headers.get("Content-Length", "0")), 32 * 1024)
+        length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
             return {}
+        if length > MAX_REQUEST_BYTES:
+            raise ValueError("request body is too large")
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def do_GET(self) -> None:

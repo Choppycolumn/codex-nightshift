@@ -99,6 +99,7 @@ function taskHtml(item) {
   const interruptedLabel = item.confidence === "high" ? "异常中断" : "可能中断";
   const statusLabel = { active: "执行中", complete: "已完成", stopped: "已停止", interrupted: interruptedLabel }[item.state] || item.state;
   const lastResult = item.last_result ? `<span class="badge">上次续跑 ${esc(item.last_result)}</span>` : "";
+  const pausedBadge = item.paused ? `<span class="badge interrupted">自动暂停：${esc(item.pause_reason || "续跑失败")}</span>` : "";
   const scheduleBadge = schedule.enabled ? `<span class="badge">计划 ${esc(schedule.run_at)}</span>` : "";
   return `
     <article class="task ${item.auto ? "is-auto" : ""}" data-id="${esc(item.id)}">
@@ -110,6 +111,7 @@ function taskHtml(item) {
           <span>${esc(item.last_active)}</span>
           <span>${esc(item.short_id)}</span>
           ${lastResult}
+          ${pausedBadge}
           ${scheduleBadge}
         </div>
       </div>
@@ -129,7 +131,7 @@ function taskHtml(item) {
       <div class="prompt-row">
         <label>
           <span>恢复后的第一句指令</span>
-          <textarea class="resume-prompt" maxlength="4000" rows="2" placeholder="留空则使用默认续跑指令" ${item.auto ? "" : "disabled"}>${esc(resumePrompt)}</textarea>
+          <textarea class="resume-prompt" rows="2" placeholder="留空则使用默认续跑指令" ${item.auto ? "" : "disabled"}>${esc(resumePrompt)}</textarea>
         </label>
         <button class="button save-prompt" ${item.auto ? "" : "disabled"}>保存指令</button>
       </div>
@@ -152,7 +154,7 @@ function taskHtml(item) {
         </label>
         <label class="schedule-command-label">
           <span>到点下达的命令</span>
-          <textarea class="schedule-prompt" maxlength="4000" rows="2" placeholder="例如：检查 CI 状态并继续修复失败项" ${item.auto ? "" : "disabled"}>${esc(schedule.prompt || "")}</textarea>
+          <textarea class="schedule-prompt" rows="2" placeholder="例如：检查 CI 状态并继续修复失败项" ${item.auto ? "" : "disabled"}>${esc(schedule.prompt || "")}</textarea>
         </label>
         <button class="button save-schedule" ${item.auto ? "" : "disabled"}>保存计划</button>
       </div>

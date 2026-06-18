@@ -42,6 +42,14 @@ def adopt_thread(
         "enabled": True,
         "adopted_at": previous.get("adopted_at", time.time()),
     }
+    if previous and not previous.get("enabled", True):
+        entry.update(
+            last_attempt_at=0,
+            last_fingerprint="",
+            last_result="",
+            retry_after=0,
+            pause_reason="",
+        )
     registry["threads"][session_id] = entry
     save_registry(registry)
     return entry

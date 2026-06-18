@@ -19,6 +19,15 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _background_python() -> Path:
+    executable = Path(sys.executable)
+    if os.name == "nt":
+        pythonw = executable.with_name("pythonw.exe")
+        if pythonw.exists():
+            return pythonw
+    return executable
+
+
 def _run_ps(command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -27,6 +36,7 @@ def _run_ps(command: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         errors="replace",
         timeout=30,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
 
@@ -41,7 +51,7 @@ def install(start_now: bool = False) -> tuple[bool, str]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     task = _quote_ps(TASK_NAME)
-    python = _quote_ps(sys.executable)
+    python = _quote_ps(_background_python())
     root = _quote_ps(_repo_root())
     start = (
         f"Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue;"
